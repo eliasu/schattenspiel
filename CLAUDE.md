@@ -108,6 +108,9 @@ Keins davon hat Inseln.
   - Die Stärke folgt Helligkeit und Lichtfarbe (in `applyLight`).
   - Wand-, Decken- und Leuchtentexturen werden prozedural auf Canvas erzeugt. **Ausnahme:** der Boden, siehe oben.
 - **Leuchte:** Gruppe `lamp` mit Mittelpunkt bei y = 1,75. Das Licht und die Birne sitzen 3 cm tiefer.
+- **Glühbirne** (Gruppe `bulb`, Mittelpunkt = Lichtposition): G80-Globe aus `LatheGeometry` mit Hals, E27-Schraubsockel mit Gewinde, Glasstab und 4 LED-Filamenten.
+  - Sie hängt an einer Fassung im Inneren, das Kabel läuft durch die Spitze (Kabelverschraubung `gland` außen). Fassung, Sockel und Innenkabel werfen Schatten, dadurch liegt oben an der Decke ein weicher Fassungsschatten.
+  - Der Kolben ist `transparent` mit `depthWrite:false`. Klar oder opal folgt dem Regler „Schattenkante“ (`updateBulb()`): Klar zeigt die Filamente, opal leuchtet der ganze Kolben.
 - **Geometrie:** Die Dreiecke werden mit N = 24 fein unterteilt, siehe Stolperfallen.
   - Die Kanten sind **Schalenprofile** („rods“, Bogen ±63°), nur nach außen gewölbt, mit eigenem einseitigem `rodMat`. Beim vollen Halbrund bekommen die flachen Flanken noch Birnenlicht ab, das zeigt sich als gestrichelte Linie.
   - **Keine vollen Zylinder mittig auf der Kante.** Deren Innenhälfte wird von der Birne beleuchtet, weil der Schatten-Bias von 4 mm größer ist als der Stab. Sie blitzt dann als heller Strich zwischen den Platten durch und sieht aus wie ein Spalt.

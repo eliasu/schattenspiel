@@ -328,7 +328,7 @@ const SLANT_MM = Math.hypot(PYR_H, HALF) * 1000;
 const FACE_W = 1024, FACE_H = Math.round(FACE_W * SLANT_MM / BASE_MM);
 const LAMP_Y = 1.75, ROOM = { x0:-5.4, x1:5.4, y1:3.3, z0:-1.8, z1:3.6 };   // Grundriss 10,8 × 5,4 m (2:1)
 const GAP_INK = '#f3e1c2';
-const BULB_R = 0.03;          // sichtbare Glühbirne (Globe, 60 mm)
+const BULB_R = 0.04;          // Glühbirne Globe G80 (80 mm), Mittelpunkt = Lichtposition
 const state = {
   faces:'beide',
   patternId:'zellen', pattern:null, patternName:'Zellen', fileName:'',
@@ -630,7 +630,9 @@ const solidMat=new THREE.MeshPhysicalMaterial({side:THREE.DoubleSide,envMapInten
 const hwMat=new THREE.MeshPhysicalMaterial({envMapIntensity:.6});
 const rodMat=new THREE.MeshPhysicalMaterial({envMapIntensity:.6});   // einseitig: die Innenseite der Halbschale darf nicht gezeichnet werden
 const cableMat=new THREE.MeshStandardMaterial({roughness:.85,metalness:0});
-const bulbMat=new THREE.MeshStandardMaterial({color:0x000000,emissive:0xffffff,emissiveIntensity:1});
+const bulbMat=new THREE.MeshStandardMaterial({color:0xffffff,emissive:0xffffff,roughness:.08,metalness:0,transparent:true,depthWrite:false});   // Glaskolben: klar … opal
+const filMat=new THREE.MeshBasicMaterial({color:0xffffff});   // LED-Filamente
+const e27Mat=new THREE.MeshStandardMaterial({color:'#c9c3b8',metalness:1,roughness:.32});   // Schraubsockel Aluminium
 
 // Leuchte
 const lamp=new THREE.Group(); lamp.position.y=LAMP_Y; scene.add(lamp);
@@ -667,9 +669,37 @@ function rod(p1,p2,r){
 }
 const C=[[-a,0,a],[a,0,a],[a,0,-a],[-a,0,-a]];
 C.forEach((c,i)=>{ rod(c,C[(i+1)%4],.0045); rod(c,[0,-h,0],.0035); rod(c,[0,h,0],.0035); });
-const socket=new THREE.Mesh(new THREE.LatheGeometry([[0,.02],[.0148,.02],[.0158,.0193],[.0198,-.0192],[.0188,-.02],[0,-.02]].map(([r,y])=>new THREE.Vector2(r,y)),32),hwMat);   // Kanten gebrochen socket.position.y=h+.012; socket.castShadow=true; lamp.add(socket);
+const lathe=(pts,seg=48)=>new THREE.LatheGeometry(pts.map(([r,y])=>new THREE.Vector2(r,y)),seg);
+// Kabelverschraubung außen auf der Spitze (Kanten gebrochen). Das Kabel läuft hier ins Innere zur Fassung.
+const gland=new THREE.Mesh(lathe([[0,.007],[.0105,.007],[.0118,.0058],[.0122,-.006],[.011,-.007],[0,-.007]],32),hwMat); gland.position.y=h+.006; gland.castShadow=true; lamp.add(gland);
 const finial=new THREE.Mesh(new THREE.SphereGeometry(.009,16,12),hwMat); finial.position.y=-h-.004; lamp.add(finial);
-const bulb=new THREE.Mesh(new THREE.SphereGeometry(BULB_R,32,20),bulbMat); bulb.position.y=LAMP_Y-.03; scene.add(bulb);
+// Glühbirne G80 mit E27-Sockel, hängt an der Fassung im Inneren. Maße in m, y = 0 ist die Kolbenmitte = Lichtposition.
+// Sockel, Fassung und Innenkabel werfen Schatten: nach oben an die Decke fällt der Schatten der Fassung.
+const bulb=new THREE.Group(); bulb.position.y=LAMP_Y-.03; scene.add(bulb);
+{
+  const R=BULB_R, glass=[];
+  for(let i=0;i<=28;i++){ const t=-Math.PI/2+i/28*(Math.PI/2+.96); glass.push([R*Math.cos(t),R*Math.sin(t)]); }   // Kugel bis ~55°
+  glass.push([.0185,.044],[.0152,.049],[.0142,.052]);   // Hals
+  bulb.add(new THREE.Mesh(lathe(glass,64),bulbMat));
+  const base=[[.0142,.051]]; for(let i=0;i<7;i++) base.push([.0139,.0525+i*.0036],[.0147,.0543+i*.0036]);   // Gewinde E27
+  base.push([.0139,.0778],[.0105,.079],[.006,.0805],[0,.081]);
+  const e27=new THREE.Mesh(lathe(base),e27Mat); e27.castShadow=true; bulb.add(e27);
+  const sock=new THREE.Mesh(lathe([[0,.126],[.0182,.126],[.0198,.1244],[.0205,.121],[.0205,.078],[.0196,.0736],[.018,.072],[.015,.072],[.0145,.08],[0,.08]]),hwMat);   // Fassung, Kanten gerundet
+  sock.castShadow=true; bulb.add(sock);
+  const inner=h+.03-.126;   // Innenkabel von der Fassung bis zur Spitze
+  const ic=new THREE.Mesh(new THREE.CylinderGeometry(.0038,.0038,inner,12),cableMat); ic.position.y=.126+inner/2; ic.castShadow=true; bulb.add(ic);
+  const stem=new THREE.Mesh(new THREE.CylinderGeometry(.0018,.0025,.03,8),bulbMat); stem.position.y=.034; bulb.add(stem);   // Glasstab
+  for(let i=0;i<4;i++){ const a=i*Math.PI/2+.4, A=new THREE.Vector3(Math.cos(a)*.004,.02,Math.sin(a)*.004), B=new THREE.Vector3(Math.cos(a)*.017,-.017,Math.sin(a)*.017);
+    const f=new THREE.Mesh(new THREE.CylinderGeometry(.0009,.0009,A.distanceTo(B),6),filMat); f.position.copy(A).add(B).multiplyScalar(.5);
+    f.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),B.sub(A).normalize()); bulb.add(f); }   // 4 Filamente als Korb
+}
+// Klar ↔ Opal folgt dem Regler „Schattenkante“: klar zeigt die Filamente, opal leuchtet der ganze Kolben
+function updateBulb(c,b){
+  const o=state.soft, on=b>0.001;
+  bulbMat.emissive.copy(c); bulbMat.emissiveIntensity = on ? (2+10*b)*(.05+.95*o) : 0;
+  bulbMat.opacity=.14+.84*Math.pow(o,.8); bulbMat.color.set(on?'#ffffff':'#d8d8d8');
+  filMat.color.copy(c).multiplyScalar(on ? 1.5+6*b : .15);
+}
 // Lens-Flare wie bei einem echten Objektiv, alles prozedural:
 //  · Glühen (Streulicht im Glas) · Beugungsstern der 6 Blendenlamellen · anamorphotischer, bläulicher Streif
 //  · schwacher Regenbogen-Halo · sechseckige Blenden-Geister mit Farbsaum auf der Linie Birne → Bildmitte (und darüber hinaus)
@@ -737,7 +767,7 @@ function placeFlare(){
   FLARE.forEach(sp=>{ const d=sp.userData.dist; sp.visible=on;
     if(!d) sp.position.copy(bulb.position); else sp.position.set(flareP.x*(1-2*d),flareP.y*(1-2*d),.5).unproject(camera); });
 }
-const topY=LAMP_Y+h+.032, cableLen=ROOM.y1-topY-.02;
+const topY=LAMP_Y+h+.012, cableLen=ROOM.y1-topY-.02;
 const cable=new THREE.Mesh(new THREE.CylinderGeometry(.0038,.0038,cableLen,12),cableMat); cable.position.y=topY+cableLen/2; cable.castShadow=true; scene.add(cable);
 const canopyProfile=[[0,0],[.058,0],[.0605,-.0015],[.061,-.004],[.061,-.017],[.0602,-.0215],[.0578,-.0245],[.054,-.0265],[.03,-.029],[.012,-.0305],   // Schale, Maße in m
   [.0085,-.031],[.0082,-.033],[.0065,-.0345],[.0058,-.036],[.0056,-.052],[.0052,-.0545],[.0042,-.0555],[0,-.0555]]                                     // Zugentlastung
@@ -772,14 +802,16 @@ function applyLight(){
   hemi.intensity=(.08+.42*b)*amb*Math.min(1,lightFade*2);
   [cutMat,solidMat,hwMat,rodMat].forEach(m=>m.envMapIntensity=1.1*b*amb);   // Streulicht vom Raum wächst mit Helligkeit und Umgebungslicht
   // Leuchtdichte der Birne passend zur Lichtleistung
-  bulbMat.emissive.copy(c); bulbMat.emissiveIntensity = b>0.001 ? 2+10*b : 0.02;
+  updateBulb(c,b); lastLight=[c.clone(),b];
   FLARE.forEach(sp=>{ const t=sp.userData.tint; sp.material.color.copy(c); if(t.getHex()!==0xffffff) sp.material.color.lerp(t,.7);   // Geister/Streif eigenfarbig, Rest in Lichtfarbe
     sp.material.color.multiplyScalar(sp.userData.k*Math.min(1,b*1.4)); });
   document.documentElement.style.setProperty('--light',hex(rgb));
   touch('lights'); touch('materials');
   updateSpec(); drawPreview();
 }
+let lastLight=null;
 function applySoft(){
+  if(lastLight) updateBulb(...lastLight);
   const r=bulbEmitterRadius();
   light.shadow.radius = r/0.25*1000;       // Echtzeit: Winkelradius ≈ Leuchtkörper / Schirmabstand
   $('#softOut').textContent = `Ø ${Math.max(2,Math.round(r*2000))} mm`;
