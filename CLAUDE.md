@@ -25,7 +25,8 @@ Sprache: **UI komplett Deutsch**. Mit dem Inhaber auf Deutsch kommunizieren.
 
 ## Aktueller Stand: V4 (maßgeblich)
 
-- **Eine einzige Datei `index.html`**: HTML + CSS + `<script type="module">`.
+- **`index.html`** (HTML + CSS + `<script type="module">`) plus Ordner **`textures/`** mit den Bodentexturen. Beides muss auf den Server.
+- **Lokal nur über einen Webserver öffnen**, zum Beispiel mit `python3 -m http.server` oder VS Code Live Server. Per `file://` blockiert Chrome die Bildtexturen, dann bleibt der Boden schwarz.
 - Three.js **r180** wird per CDN importiert: `https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js`.
 - Kein Build-Schritt, kein Framework, kein Server-Code.
 - **Deploy:** Der Inhaber legt die Datei selbst auf einen **Hetzner-Server**. **Kein Serverbudget**, kein Blender oder GPU-Rendering auf dem Server.
@@ -54,7 +55,7 @@ Ein globales `state`-Objekt:
 state = {
   faces: 'beide' | 'unten' | 'oben',
   patternId, pattern /* Canvas: Lückenmaske */, patternName, fileName,
-  repeat: bool, scale /* mm, Breite eines Rapports */, offX, offY /* mm */, border /* Rahmen in mm */,
+  repeat: bool, scale /* mm, Breite eines Rapports, Start 300 */, offX, offY /* mm */, border /* Rahmen in mm, Start 20 */,
   material: 'corten' | 'messing' | 'schwarz' | 'weiss',
   bri /* 0..1 */, kelvin, lightMode: 'k' | 'c', lightHex, soft /* 0..1 Schattenweichheit */,
   cable /* Index */, rotate: bool
@@ -93,18 +94,33 @@ state = {
 Keins davon hat Inseln.
 
 ### 3D-Szene
-- **Raum:** x −2,6…2,6 m, Höhe 2,8 m, z −2,4…4,0 m. Die Kamera steht im Raum, die Rückwand ist bei z = −2,4. Dazu Sockelleisten.
-  - Wände: `#e4e0d9`, Putz mit Normal-Map.
-  - Boden: Estrich mit Farb-, Rauheits- und Normal-Map.
-  - Alle Texturen werden prozedural auf Canvas erzeugt, keine externen Assets.
+- **Raum:** Grundriss 2:1, x −5,4…5,4 m, Höhe 3,3 m, z −1,8…3,6 m. Die Kamera steht im Raum, die Rückwand ist bei z = −2,4. Dazu Sockelleisten.
+  - Wände: Reibeputz. Ein Höhenfeld (`plasterH`: weiche Kellen-Wellen + Sandkörner) ergibt Normal-, Farb- und Rauheits-Map.
+  - Die UVs der Raumflächen sind in **Metern** (`plane()`), `repeat` heißt also Kacheln pro Meter.
+  - Boden: alte abgezogene Kieferndielen. Scan „Wood Floor Worn“ von Poly Haven (CC0), 2K, liegt in `textures/` (Farbe, Normal GL, Rauheit), 1 Kachel = 2 × 2 m.
+    - Die Farbtextur ist vorab bearbeitet: 40 % entsättigt und aufgehellt (Gamma 0,78), weil das Original orange lackiert wirkt.
+- **Baldachin:** `LatheGeometry` aus einem Profil in Metern: Schale mit Radiuskante und Zugentlastung fürs Kabel.
+- **Lens-Flare:** eigene additive Sprites mit `depthTest` aus (`FLARE`, `placeFlare()`), Texturen prozedural.
+  - Elemente: Glühen, Beugungsstern (6 Blendenlamellen), anamorphotischer bläulicher Streif, schwacher Regenbogen-Halo und sechseckige Geister mit Farbsaum auf der Achse Birne → Bildmitte.
+  - `toneMapped:false`. Geister und Streif haben eine Eigenfarbe (`tint`), der Rest folgt der Lichtfarbe.
+  - **Verdeckung:** `bulbVisibility()` schießt pro Frame 32 Strahlen von der Kamera auf die Birnenscheibe. Jeder wird mit den 8 Flächen (`FACE_TRIS`) geschnitten und fragt in der Fräsmaske (`maskData`) ab, ob er auf Stahl oder ein Loch trifft. Der sichtbare Anteil steuert die `opacity` des Flares, er scheint also nur durch die Löcher.
+  - Das `Lensflare`-Addon von three ist dafür ungeeignet: Es prüft nur 9 Pixel und ist praktisch immer verdeckt.
+  - Die Stärke folgt Helligkeit und Lichtfarbe (in `applyLight`).
+  - Wand-, Decken- und Leuchtentexturen werden prozedural auf Canvas erzeugt. **Ausnahme:** der Boden, siehe oben.
 - **Leuchte:** Gruppe `lamp` mit Mittelpunkt bei y = 1,75. Das Licht und die Birne sitzen 3 cm tiefer.
-- **Geometrie:** Die Dreiecke werden mit N = 24 fein unterteilt, siehe Stolperfallen. Die Kanten sind Zylinder („rods“).
+- **Geometrie:** Die Dreiecke werden mit N = 24 fein unterteilt, siehe Stolperfallen.
+  - Die Kanten sind **Schalenprofile** („rods“, Bogen ±63°), nur nach außen gewölbt, mit eigenem einseitigem `rodMat`. Beim vollen Halbrund bekommen die flachen Flanken noch Birnenlicht ab, das zeigt sich als gestrichelte Linie.
+  - **Keine vollen Zylinder mittig auf der Kante.** Deren Innenhälfte wird von der Birne beleuchtet, weil der Schatten-Bias von 4 mm größer ist als der Stab. Sie blitzt dann als heller Strich zwischen den Platten durch und sieht aus wie ein Spalt.
 - **Materialien:** `MeshPhysicalMaterial`. Die Parameter setzt `MATS[id].set(material)`:
-  - Corten: Rostfarbe, Rauheits- und Normal-Map, metalness 0,15.
-  - Messing: metalness 1, gebürstete Roughness-Map.
-  - Schwarz: Pulver-Normal-Map.
+  - Corten: Rostfarbe, Rauheits-Map und Normal-Map aus dem Rostbild selbst (`rustHeight`, Stärke 1,3), metalness 0,15.
+  - Messing: metalness 1, gebürstete Roughness-Map und Normal-Map aus denselben Schleifriefen.
+  - Schwarz: Pulver-Normal-Map mit Orangenhaut (0,9). Weiß nutzt dieselbe mit 0,5.
   - Weiß: clearcoat 1.
-  - Metall bekommt eine kleine PMREM-Umgebung als `envMap`.
+  - Alle Leuchtenmaterialien bekommen eine PMREM-Umgebung als `envMap`, die grob dem beleuchteten Raum entspricht (helle, warme Wände, dunkler Boden). `envMapIntensity = 1,1 · Helligkeit`. Ohne diese Umgebung bleiben die Außenseiten schwarz, weil die Birne nur von innen strahlt. Dann sieht man weder Material noch Struktur.
+  - Auf den Profilen (`rodMat`) gibt es keine Normal-Map, dort sähe sie gestrichelt aus.
+  - **Fasen:** Die gefrästen Flächen (`cutMat`) bekommen eine eigene gebackene Normal-Map in Flächen-UV (`bakeFaceNormal()`, `nrmTex`). Sie enthält das Materialrelief aus `MATS[..].bump` und eine Fase von ca. 1 mm an jeder Fräskante: weichgezeichnete Stahlmaske als Höhe, Whiteout-Mischung. Neu gebacken wird nach Muster- oder Materialwechsel, entprellt mit 120 ms.
+  - Fassung und Baldachin sind Drehteile mit gebrochenen Kanten.
+- **Umgebungslicht** (`state.amb`, 0…1, Start 0,5): Faktor 0…2 auf `HemisphereLight` und `envMapIntensity`.
 - **Licht:**
   - Ein `PointLight` mit `castShadow` und physikalischer Einheit (Candela): `intensity = 22·b² + 0,3`.
   - Dazu ein `HemisphereLight` (`0,08 + 0,42·b`) als Ersatz für indirektes Licht.
@@ -114,9 +130,16 @@ Keins davon hat Inseln.
 - **Schatten-Map:** 1024 pro Würfelseite, bias −0,004, near 0,01, far 12. `shadowMap.autoUpdate = false`, aktualisiert wird nur bei Änderung (`shadowDirty`) oder beim Drehen.
 - **Kamera:**
   - Eigene Steuerung ohne OrbitControls, Ziel (0, 1,62, 0).
-  - Abstand 2,1–3,4 m, Azimut ±35°, Elevation −4…24°, weich nachgezogen.
+  - Abstand 2,1–3,4 m, Azimut ±50°, Elevation −4…24°, weich nachgezogen.
   - FOV 55, im Hochformat 64. Pixel Ratio höchstens 1,75.
-  - „Drehen“ dreht die Leuchte (0,14 rad/s) und ist standardmäßig aus.
+  - „Drehen“ dreht die Leuchte (0,14 rad/s) und ist standardmäßig **an**.
+  - Die Maus steuert **immer** die Kamera, auch im Dreh-Modus. Der Schalter dreht nur die Leuchte automatisch (vom Inhaber so gewünscht).
+- **Intro** (`playIntro()`, ca. 3 s, bewusst schnell und clean, **kein Blur**):
+  - Wortmarke „schattenspiel“ auf Weiß, die Buchstaben schnellen gestaffelt aus einer Maske (`overflow:hidden`) hoch. Danach fliegt sie per FLIP ins Nav-Logo.
+  - Gleichzeitig öffnet sich die Bühne per `clip-path` aus einem Schlitz, und das UI baut sich gestaffelt auf (CSS-Variable `--d`).
+  - 3D-Teil: `flyIntro()` fährt die Kamera aus der Raumecke heran und dreht die Leuchte ein. `lightFade` 0→1 zündet das Licht aus dem Dunkel.
+  - Der Startzustand hängt an `body.booting`. **Nicht `.pre` nennen**, die Klasse ist schon für die Licht-Presets vergeben.
+  - Bei `prefers-reduced-motion` wird das Intro übersprungen.
 
 ---
 
